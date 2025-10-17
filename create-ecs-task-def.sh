@@ -1,32 +1,35 @@
 #!/bin/sh
-# POSIX shell: create ECS task definition JSON and register it
+# POSIX script: create CloudWatch log group and ECS task definition
 
 set -eu
 
-# Defaults (allow override from env)
 AWS_REGION="${AWS_REGION:-ap-southeast-1}"
 
-# Ensure AWS CLI is available
+# Check for AWS CLI
 if ! command -v aws >/dev/null 2>&1; then
-  echo "Error: aws CLI not found. Install and configure it first." >&2
+  echo "Error: aws CLI not found. Install it and run 'aws configure' first." >&2
   exit 1
 fi
 
-# Resolve account ID
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)"
 if [ -z "$ACCOUNT_ID" ] || [ "$ACCOUNT_ID" = "None" ]; then
-  echo "Error: could not determine AWS account (run 'aws configure')." >&2
+  echo "Error: could not determine AWS account." >&2
   exit 1
 fi
 
-# Write task definition JSON (variables expand in this heredoc)
+LOG_GROUP_NAME="retail-store-ecs-tasks"
+
+echo "Ensuring CloudWatch log group: $LOG_GROUP_NAME ..."
+aws logs create-log-group --log-group-name "$LOG_GROUP_NAME" --region "$AWS_REGION" 2>/dev/null || true
+aws logs put-retention-policy --log-group-name "$LOG_GROUP_NAME" --retention-in-days 14 --region "$AWS_REGION" || true
+
+echo "Writing ECS task definition JSON..."
+
 cat <<EOF > retail-store-ecs-ui-taskdef.json
 {
     "family": "retail-store-ecs-ui",
     "networkMode": "awsvpc",
-    "requiresCompatibilities": [
-        "FARGATE"
-    ],
+    "requiresCompatibilities": ["FARGATE"],
     "cpu": "1024",
     "memory": "2048",
     "runtimePlatform": {
@@ -47,14 +50,9 @@ cat <<EOF > retail-store-ecs-ui-taskdef.json
                 }
             ],
             "essential": true,
-            "linuxParameters": {
-                "initProcessEnabled": true
-            },
+            "linuxParameters": { "initProcessEnabled": true },
             "healthCheck": {
-                "command": [
-                    "CMD-SHELL",
-                    "curl -f http://localhost:8080/actuator/health || exit 1"
-                ],
+                "command": ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"],
                 "interval": 10,
                 "timeout": 5,
                 "retries": 3,
@@ -63,7 +61,7 @@ cat <<EOF > retail-store-ecs-ui-taskdef.json
             "logConfiguration": {
                 "logDriver": "awslogs",
                 "options": {
-                    "awslogs-group": "retail-store-ecs-tasks",
+                    "awslogs-group": "${LOG_GROUP_NAME}",
                     "awslogs-region": "${AWS_REGION}",
                     "awslogs-stream-prefix": "ui-service"
                 }
@@ -75,14 +73,14 @@ cat <<EOF > retail-store-ecs-ui-taskdef.json
 }
 EOF
 
-# Optional JSON validation (only if jq is installed)
+# Validate JSON (if jq installed)
 if command -v jq >/dev/null 2>&1; then
   jq . retail-store-ecs-ui-taskdef.json >/dev/null
 else
-  echo "Note: jq not found; skipping JSON validation." >&2
+  echo "Note: jq not found, skipping JSON validation."
 fi
 
-# Register the task definition
+echo "Registering ECS task definition..."
 aws ecs register-task-definition --cli-input-json file://retail-store-ecs-ui-taskdef.json --region "$AWS_REGION"
 
-echo "Registered task definition using ACCOUNT_ID=$ACCOUNT_ID, AWS_REGION=$AWS_REGION"
+echo "✅ Done. Task definition registered and log group ensured."

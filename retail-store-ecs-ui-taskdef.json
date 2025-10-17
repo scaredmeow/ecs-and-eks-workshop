@@ -1,9 +1,7 @@
 {
     "family": "retail-store-ecs-ui",
     "networkMode": "awsvpc",
-    "requiresCompatibilities": [
-        "FARGATE"
-    ],
+    "requiresCompatibilities": ["FARGATE"],
     "cpu": "1024",
     "memory": "2048",
     "runtimePlatform": {
@@ -24,14 +22,9 @@
                 }
             ],
             "essential": true,
-            "linuxParameters": {
-                "initProcessEnabled": true
-            },
+            "linuxParameters": { "initProcessEnabled": true },
             "healthCheck": {
-                "command": [
-                    "CMD-SHELL",
-                    "curl -f http://localhost:8080/actuator/health || exit 1"
-                ],
+                "command": ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"],
                 "interval": 10,
                 "timeout": 5,
                 "retries": 3,
